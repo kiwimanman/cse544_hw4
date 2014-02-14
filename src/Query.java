@@ -34,7 +34,13 @@ public class Query {
 	private static final String DIRECTOR_MID_SQL = "SELECT y.* "
 					 + "FROM movie_directors x, directors y "
 					 + "WHERE x.mid = ? and x.did = y.id";
+
+    private static final String ACTOR_MID_SQL = "SELECT DISTINCT actor.* "
+            + "FROM actor, casts "
+            + "WHERE casts.mid = ? and casts.pid = actor.id";
+
 	private PreparedStatement directorMidStatement;
+    private PreparedStatement actorMidStatement;
 
 	/* uncomment, and edit, after your create your own customer database */
 	/*
@@ -111,6 +117,7 @@ public class Query {
 	public void prepareStatements() throws Exception {
 
 		directorMidStatement = conn.prepareStatement(DIRECTOR_MID_SQL);
+        actorMidStatement = conn.prepareStatement(ACTOR_MID_SQL);
 
 		/* uncomment after you create your customers database */
 		/*
@@ -211,8 +218,19 @@ public class Query {
 						+ " " + director_set.getString(2));
 			}
 			director_set.close();
+
+            /* do a dependent join with directors */
+            actorMidStatement.clearParameters();
+            actorMidStatement.setInt(1, mid);
+            ResultSet actorSet = actorMidStatement.executeQuery();
+            while (actorSet.next()) {
+                System.out.println("\t\tActors: " + actorSet.getString("fname") + " " + actorSet.getString("lname"));
+            }
+            actorSet.close();
+
 			/* now you need to retrieve the actors, in the same manner */
 			/* then you have to find the status: of "AVAILABLE" "YOU HAVE IT", "UNAVAILABLE" */
+
 		}
 		movie_set.close();
 		System.out.println();
