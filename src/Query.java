@@ -34,16 +34,17 @@ public class Query {
 	private static final String DIRECTOR_MID_SQL = "SELECT y.* "
 					 + "FROM movie_directors x, directors y "
 					 + "WHERE x.mid = ? and x.did = y.id";
+    private PreparedStatement directorMidStatement;
 
     private static final String ACTOR_MID_SQL = "SELECT DISTINCT actor.* "
             + "FROM actor, casts "
             + "WHERE casts.mid = ? and casts.pid = actor.id";
-
-	private PreparedStatement directorMidStatement;
     private PreparedStatement actorMidStatement;
 
-	/* uncomment, and edit, after your create your own customer database */
-	/*
+    private static final String RENTAL_STATUS_STATEMENT =
+        "SELECT * FROM rental WHERE status = 1 and movie_id = ?";
+    private PreparedStatement rentalStatusStatement;
+
 	private static final String CUSTOMER_LOGIN_SQL = 
 		"SELECT * FROM customer WHERE login = ? and password = ?";
 	private PreparedStatement customerLoginStatement;
@@ -57,7 +58,6 @@ public class Query {
 
 	private static final String ROLLBACK_SQL = "ROLLBACK TRANSACTION";
 	private PreparedStatement rollbackTransactionStatement;
-	*/
 	
 
 	public Query(String configFilename) {
@@ -83,24 +83,15 @@ public class Query {
 		Class.forName(jSQLDriver).newInstance();
 
 		/* open connections to the imdb database */
+		conn = DriverManager.getConnection(jSQLUrl, jSQLUser, jSQLPassword);
+		conn.setAutoCommit(true); //by default automatically commit after each statement
+		//   conn.setTransactionIsolation(...) */
 
-		conn = DriverManager.getConnection(jSQLUrl, // database
-						   jSQLUser, // user
-						   jSQLPassword); // password
-                
-		conn.setAutoCommit(true); //by default automatically commit after each statement 
+        /* open connections to the customer database */
+		customerConn = DriverManager.getConnection(configProps.getProperty("videostore.customer_url"), jSQLUser, jSQLPassword);
+		customerConn.setAutoCommit(true); //by default automatically commit after each statement
+		//customerConn.setTransactionIsolation(...);
 
-		/* You will also want to appropriately set the 
-                   transaction's isolation level through:  
-		   conn.setTransactionIsolation(...) */
-
-		/* Also you will put code here to specify the connection to your
-		   customer DB.  E.g.
-
-		   customerConn = DriverManager.getConnection(...);
-		   customerConn.setAutoCommit(true); //by default automatically commit after each statement
-		   customerConn.setTransactionIsolation(...); //
-		*/
 	        
 	}
 
@@ -119,16 +110,11 @@ public class Query {
 		directorMidStatement = conn.prepareStatement(DIRECTOR_MID_SQL);
         actorMidStatement = conn.prepareStatement(ACTOR_MID_SQL);
 
-		/* uncomment after you create your customers database */
-		/*
+        rentalStatusStatement = customerConn.prepareStatement(RENTAL_STATUS_STATEMENT);
 		customerLoginStatement = customerConn.prepareStatement(CUSTOMER_LOGIN_SQL);
 		beginTransactionStatement = customerConn.prepareStatement(BEGIN_TRANSACTION_SQL);
 		commitTransactionStatement = customerConn.prepareStatement(COMMIT_SQL);
 		rollbackTransactionStatement = customerConn.prepareStatement(ROLLBACK_SQL);
-		*/
-
-		/* add here more prepare statements for all the other queries you need */
-		/* . . . . . . */
 	}
 
 
@@ -168,9 +154,6 @@ public class Query {
     /* login transaction: invoked only once, when the app is started  */
 	public int transaction_login(String name, String password) throws Exception {
 		/* authenticates the user, and returns the user id, or -1 if authentication fails */
-
-		/* Uncomment after you create your own customers database */
-		/*
 		int cid;
 
 		customerLoginStatement.clearParameters();
@@ -181,14 +164,11 @@ public class Query {
 		else cid = -1;
 		cid_set.close();
 		return(cid);
-		 */
-		return (55);
 	}
 
 	public void transaction_printPersonalData(int cid) throws Exception {
 		/* println the customer's personal data: name, and plan number */
 	}
-
 
     /**********************************************************/
     /* main functions in this project: */
@@ -219,7 +199,7 @@ public class Query {
 			}
 			director_set.close();
 
-            /* do a dependent join with directors */
+            /* do a dependent join with actors */
             actorMidStatement.clearParameters();
             actorMidStatement.setInt(1, mid);
             ResultSet actorSet = actorMidStatement.executeQuery();
@@ -228,9 +208,20 @@ public class Query {
             }
             actorSet.close();
 
-			/* now you need to retrieve the actors, in the same manner */
 			/* then you have to find the status: of "AVAILABLE" "YOU HAVE IT", "UNAVAILABLE" */
-
+            rentalStatusStatement.clearParameters();
+            rentalStatusStatement.setInt(1, mid);
+            ResultSet rentalSet = rentalStatusStatement.executeQuery();
+            if (rentalSet.next()) {
+                if (rentalSet.getInt("customer_id") == cid) {
+                    System.out.println("YOU HAVE IT");
+                } else {
+                    System.out.println("UNAVAILABLE");
+                }
+            } else {
+                System.out.println("AVAILABLE");
+            }
+            rentalSet.close();
 		}
 		movie_set.close();
 		System.out.println();
