@@ -1,9 +1,6 @@
-import java.util.Properties;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.Statement;
+import javax.sql.rowset.serial.SerialArray;
+import java.sql.*;
+import java.util.*;
 
 import java.io.FileInputStream;
 
@@ -27,7 +24,7 @@ public class Query {
 
 	// LIKE does a case-insensitive match
 	private static final String SEARCH_SQL =
-		"SELECT * FROM movie WHERE name LIKE ? ORDER BY id";
+		"SELECT * FROM movie WHERE name LIKE ? ORDER BY id DESC";
     private PreparedStatement movieSearchStatement;
 
 	private static final String DIRECTOR_MID_SQL = "SELECT y.* "
@@ -35,10 +32,24 @@ public class Query {
 					 + "WHERE x.mid = ? and x.did = y.id";
     private PreparedStatement directorMidStatement;
 
+    private static final String DIRECTOR_JOIN_START = "SELECT DISTINCT movie.id, directors.* " +
+            "FROM directors " +
+            "JOIN movie_directors on directors.id = movie_directors.did " +
+            "JOIN movie on movie_directors.mid = movie.id " +
+            "WHERE movie.id IN (";
+    private static final String DIRECTOR_JOIN_END = ") ORDER BY movie.id DESC";
+
     private static final String ACTOR_MID_SQL = "SELECT DISTINCT actor.* "
             + "FROM actor, casts "
             + "WHERE casts.mid = ? and casts.pid = actor.id";
     private PreparedStatement actorMidStatement;
+
+    private static final String ACTOR_JOIN_START = "SELECT DISTINCT movie.id, actor.* " +
+            "FROM movie " +
+            "JOIN casts on casts.mid = movie.id " +
+            "JOIN actor on casts.pid = actor.id " +
+            "WHERE movie.id in (";
+    private static final String ACTOR_JOIN_END = ") ORDER BY movie.id DESC";
 
     private static final String RENTAL_STATUS_STATEMENT =
         "SELECT * FROM rental WHERE status = 1 and movie_id = ?";
@@ -240,32 +251,74 @@ public class Query {
 	    /* return the movie mid by the customer cid */
 	}
 
-	public void transaction_fastSearch(int cid, String movie_title)
-			throws Exception {
-		/* like transaction_search, but uses joins instead of dependent joins
-		   Needs to run three SQL queries: (a) movies, (b) movies join directors, (c) movies join actors
-		   Answers are sorted by mid.
-		   Then merge-joins the three answer sets */
+	public void transaction_fastSearch(int cid, String movie_title) throws Exception {
+        String searchString = '%' + movie_title + '%';
+
+        movieSearchStatement.clearParameters();
+        movieSearchStatement.setString(1, searchString);
+        ResultSet movieSet = movieSearchStatement.executeQuery();
+
+        // This next part makes me sad but figuring how to get the typing right is annoying in Java.
+        // Had to get all the data processing done in one pass of the movies but still have to do another one later...
+        List<Integer> movieIds = new ArrayList<>(movieSet.getFetchSize());
+        StringBuilder sb = new StringBuilder();
+        Map<Integer, String> outputMap = new HashMap<>(movieSet.getFetchSize());
+        while (movieSet.next()) {
+            int movieId = movieSet.getInt(1);
+            movieIds.add(movieId);
+            sb.append(Integer.toString(movieId));
+            sb.append(',');
+            outputMap.put(movieId, "NAME: " + movieSet.getString(2) + " YEAR: " + movieSet.getString(3));
+        }
+        sb.setLength(sb.length() - 1);
+        String idTuple = sb.toString();
+
+        // These are super fast when done this way.
+        ResultSet actorSet = conn.createStatement().executeQuery(ACTOR_JOIN_START + idTuple + ACTOR_JOIN_END);
+        ResultSet directorSet = conn.createStatement().executeQuery(DIRECTOR_JOIN_START + idTuple + DIRECTOR_JOIN_END);
+
+        boolean moreActors = actorSet.next();
+        boolean moreDirectors = directorSet.next();
+
+        for (int movie_id : movieIds) {
+            // Print movie
+            System.out.println("ID: " + movie_id + " " + outputMap.get(movie_id));
+
+            while (moreDirectors && movie_id == directorSet.getInt(1)) {
+                // Print director
+                System.out.println("\t\tDirector: " + directorSet.getString(4)  + " " + directorSet.getString(3));
+
+                if (!directorSet.next()) {
+                    moreDirectors = false;
+                }
+            }
+
+            while (moreActors && movie_id == actorSet.getInt(1)) {
+                // Print actor
+                System.out.println("\t\tActors: " + actorSet.getString("fname") + " " + actorSet.getString("lname"));
+
+                if (!actorSet.next()) {
+                    moreActors = false;
+                }
+            }
+            System.out.println();
+        }
+        movieSet.close();
+        directorSet.close();
+        actorSet.close();
 	}
 
-
-    /* Uncomment helpers below once you've got beginTransactionStatement,
-       commitTransactionStatement, and rollbackTransactionStatement setup from
-       prepareStatements():
-    
-       public void beginTransaction() throws Exception {
+    public void beginTransaction() throws Exception {
 	    customerConn.setAutoCommit(false);
 	    beginTransactionStatement.executeUpdate();	
-        }
+    }
 
-        public void commitTransaction() throws Exception {
+    public void commitTransaction() throws Exception {
 	    commitTransactionStatement.executeUpdate();	
 	    customerConn.setAutoCommit(true);
 	}
-        public void rollbackTransaction() throws Exception {
+    public void rollbackTransaction() throws Exception {
 	    rollbackTransactionStatement.executeUpdate();
 	    customerConn.setAutoCommit(true);
-	    } 
-    */
-
+	}
 }
