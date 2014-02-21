@@ -69,7 +69,9 @@ public class Query {
 
 	private static final String ROLLBACK_SQL = "ROLLBACK TRANSACTION";
 	private PreparedStatement rollbackTransactionStatement;
-	
+
+    private static final String RENTAL_OPEN = "1";
+    private static final String RENTAL_CLOSED = "0";
 
 	public Query(String configFilename) {
 		this.configFilename = configFilename;
@@ -179,9 +181,9 @@ public class Query {
         String personalDataStart =
                 "SELECT customer.id, fname, lname, count(rental.movie_id) AS rental_count, maximum_rentals " +
                 "FROM customer " +
-                "JOIN rental ON customer.id = rental.customer_id " +
+                "LEFT JOIN rental ON customer.id = rental.customer_id AND status = " + RENTAL_OPEN + " " +
                 "JOIN rentalplan ON customer.plan_id = rentalplan.id " +
-                "WHERE status = 1 AND customer.id = ";
+                "WHERE customer.id = ";
         String personalDataEnd =
                 " GROUP BY customer.id, fname, lname, maximum_rentals";
 
@@ -202,6 +204,7 @@ public class Query {
             System.out.println(sb.toString());
             System.out.println();
         }
+        customerSet.close();
 	}
 
     /**********************************************************/
@@ -276,6 +279,14 @@ public class Query {
 
 	public void transaction_return(int cid, int mid) throws Exception {
 	    /* return the movie mid by the customer cid */
+        StringBuilder sb = new StringBuilder();
+        sb
+                .append("UPDATE rental ")
+                .append("SET status = ").append(RENTAL_CLOSED).append(" ")
+                .append("WHERE customer_id = ").append(Integer.toString(cid)).append(" ")
+                .append("AND movie_id = ").append(Integer.toString(mid));
+        String query = sb.toString();
+        customerConn.createStatement().executeUpdate(query);
 	}
 
 	public void transaction_fastSearch(int cid, String movie_title) throws Exception {
