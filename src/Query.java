@@ -73,6 +73,28 @@ public class Query {
     private static final String RENTAL_OPEN = "1";
     private static final String RENTAL_CLOSED = "0";
 
+    private static final String LIST_PLANS_SQL = "SELECT * FROM rentalplan ORDER BY monthly_fee ASC";
+    private PreparedStatement listPlansStatement;
+
+    private static final String UPDATE_PLAN_SQL =
+            "UPDATE customer " +
+            "SET plan_id = ? " +
+            "WHERE customer.id = ?";
+    private PreparedStatement updatePlanStatement;
+
+    private static final String CHECK_PLAN_SQL =
+            "SELECT * FROM RentalPlan WHERE id = ?";
+    private PreparedStatement checkPlanStatement;
+
+    private static final String PERSONAL_DATA_BEGIN_SQL =
+            "SELECT customer.id, fname, lname, count(rental.movie_id) AS rental_count, maximum_rentals " +
+            "FROM customer " +
+            "LEFT JOIN rental ON customer.id = rental.customer_id AND status = " + RENTAL_OPEN + " " +
+            "JOIN rentalplan ON customer.plan_id = rentalplan.id " +
+            "WHERE customer.id = ";
+    private static final String PERSONAL_DATA_END_SQL =
+            " GROUP BY customer.id, fname, lname, maximum_rentals";
+
 	public Query(String configFilename) {
 		this.configFilename = configFilename;
 	}
@@ -125,6 +147,9 @@ public class Query {
 		beginTransactionStatement = customerConn.prepareStatement(BEGIN_TRANSACTION_SQL);
 		commitTransactionStatement = customerConn.prepareStatement(COMMIT_SQL);
 		rollbackTransactionStatement = customerConn.prepareStatement(ROLLBACK_SQL);
+        listPlansStatement = customerConn.prepareStatement(LIST_PLANS_SQL);
+        updatePlanStatement = customerConn.prepareStatement(UPDATE_PLAN_SQL);
+        checkPlanStatement = customerConn.prepareStatement(CHECK_PLAN_SQL);
 	}
 
 
@@ -136,18 +161,27 @@ public class Query {
 		/* How many movies can she/he still rent?
 		   You have to compute and return the difference between the customer's plan
 		   and the count of outstanding rentals */
-		return (99);
+        ResultSet customerSet = customerConn.createStatement().executeQuery(PERSONAL_DATA_BEGIN_SQL + Integer.toString(cid) + PERSONAL_DATA_END_SQL);
+
+        if (customerSet.next()) {
+            return customerSet.getInt("maximum_rentals") - customerSet.getInt("rental_count");
+        } else {
+            return 0;
+        }
 	}
 
-	public String getCustomerName(int cid) throws Exception {
-		/* Find the first and last name of the current customer. */
-		return ("JoeFirstName" + " " + "JoeLastName");
-
-	}
-
-	public boolean isValidPlan(int planid) throws Exception {
-		/* Is planid a valid plan ID?  You have to figure it out */
-		return true;
+	public boolean isValidPlan(int plan_id) throws Exception {
+        checkPlanStatement.clearParameters();
+        checkPlanStatement.setInt(1, plan_id);
+        ResultSet planSet = checkPlanStatement.executeQuery();
+        boolean result;
+        if (planSet.next()) {
+            result = true;
+        } else {
+            result = false;
+        }
+        planSet.close();
+		return result;
 	}
 
 	public boolean isValidMovie(int mid) throws Exception {
@@ -178,16 +212,7 @@ public class Query {
 
 	public void transaction_printPersonalData(int cid) throws Exception {
 		/* println the customer's personal data: name, and plan number */
-        String personalDataStart =
-                "SELECT customer.id, fname, lname, count(rental.movie_id) AS rental_count, maximum_rentals " +
-                "FROM customer " +
-                "LEFT JOIN rental ON customer.id = rental.customer_id AND status = " + RENTAL_OPEN + " " +
-                "JOIN rentalplan ON customer.plan_id = rentalplan.id " +
-                "WHERE customer.id = ";
-        String personalDataEnd =
-                " GROUP BY customer.id, fname, lname, maximum_rentals";
-
-        ResultSet customerSet = customerConn.createStatement().executeQuery(personalDataStart + Integer.toString(cid) + personalDataEnd);
+        ResultSet customerSet = customerConn.createStatement().executeQuery(PERSONAL_DATA_BEGIN_SQL + Integer.toString(cid) + PERSONAL_DATA_END_SQL);
 
         if (customerSet.next()) {
             StringBuilder sb = new StringBuilder();
@@ -264,12 +289,33 @@ public class Query {
 	}
 
 	public void transaction_choosePlan(int cid, int pid) throws Exception {
-	    /* updates the customer's plan to pid: UPDATE customer SET plid = pid */
-	    /* remember to enforce consistency ! */
+	    beginTransaction();
+
+        updatePlanStatement.clearParameters();
+        updatePlanStatement.setInt(1, pid);
+        updatePlanStatement.setInt(2, cid);
+        updatePlanStatement.executeUpdate();
+
+        if (isValidPlan(pid) && getRemainingRentals(cid) >= 0) {
+            commitTransaction();
+        } else {
+            rollbackTransaction();
+        }
 	}
 
 	public void transaction_listPlans() throws Exception {
 	    /* println all available plans: SELECT * FROM plan */
+        ResultSet plans = listPlansStatement.executeQuery();
+        System.out.println("\tId\tName\tMaximum Rentals\tMonthly Fee");
+        while(plans.next()) {
+            System.out.println(
+                "\t" + Integer.toString(plans.getInt("id")) +
+                "\t" + plans.getString("name") +
+                "\t" + Integer.toString(plans.getInt("maximum_rentals")) +
+                "\t" + Double.toString(plans.getDouble("monthly_fee"))
+            );
+        }
+        plans.close();
 	}
 
 	public void transaction_rent(int cid, int mid) throws Exception {
