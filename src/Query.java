@@ -26,10 +26,9 @@ public class Query {
 	// Canned queries
 
 	// LIKE does a case-insensitive match
-	private static final String SEARCH_SQL_BEGIN =
-		"SELECT * FROM movie WHERE name LIKE '%";
-	private static final String SEARCH_SQL_END = 
-		"%' ORDER BY id";
+	private static final String SEARCH_SQL =
+		"SELECT * FROM movie WHERE name LIKE ? ORDER BY id";
+    private PreparedStatement movieSearchStatement;
 
 	private static final String DIRECTOR_MID_SQL = "SELECT y.* "
 					 + "FROM movie_directors x, directors y "
@@ -65,10 +64,6 @@ public class Query {
 	}
 
     /**********************************************************/
-    /* Connection code to SQL Azure. Example code below will connect to the imdb database on Azure
-       IMPORTANT NOTE:  You will need to create (and connect to) your new customer database before 
-       uncommenting and running the query statements in this file .
-     */
 
 	public void openConnection() throws Exception {
 		configProps.load(new FileInputStream(configFilename));
@@ -107,6 +102,7 @@ public class Query {
 
 	public void prepareStatements() throws Exception {
 
+        movieSearchStatement = conn.prepareStatement(SEARCH_SQL);
 		directorMidStatement = conn.prepareStatement(DIRECTOR_MID_SQL);
         actorMidStatement = conn.prepareStatement(ACTOR_MID_SQL);
 
@@ -180,10 +176,9 @@ public class Query {
 		   AVAILABLE, or UNAVAILABLE, or YOU CURRENTLY RENT IT */
 
 		/* Interpolate the movie title into the SQL string */
-		String searchSql = SEARCH_SQL_BEGIN + movie_title + SEARCH_SQL_END;
-		
-		Statement searchStatement = conn.createStatement();
-		ResultSet movie_set = searchStatement.executeQuery(searchSql);
+		movieSearchStatement.clearParameters();
+        movieSearchStatement.setString(1, '%' + movie_title + '%');
+		ResultSet movie_set = movieSearchStatement.executeQuery();
 		while (movie_set.next()) {
 			int mid = movie_set.getInt(1);
 			System.out.println("ID: " + mid + " NAME: "
