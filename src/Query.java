@@ -1,4 +1,5 @@
 import javax.sql.rowset.serial.SerialArray;
+import javax.xml.transform.Result;
 import java.sql.*;
 import java.util.*;
 
@@ -175,6 +176,32 @@ public class Query {
 
 	public void transaction_printPersonalData(int cid) throws Exception {
 		/* println the customer's personal data: name, and plan number */
+        String personalDataStart =
+                "SELECT customer.id, fname, lname, count(rental.movie_id) AS rental_count, maximum_rentals " +
+                "FROM customer " +
+                "JOIN rental ON customer.id = rental.customer_id " +
+                "JOIN rentalplan ON customer.plan_id = rentalplan.id " +
+                "WHERE status = 1 AND customer.id = ";
+        String personalDataEnd =
+                " GROUP BY customer.id, fname, lname, maximum_rentals";
+
+        ResultSet customerSet = customerConn.createStatement().executeQuery(personalDataStart + Integer.toString(cid) + personalDataEnd);
+
+        if (customerSet.next()) {
+            StringBuilder sb = new StringBuilder();
+            sb
+                .append(customerSet.getString("fname"))
+                .append(" ")
+                .append(customerSet.getString("lname"))
+                .append(": ")
+                .append("Currently Renting ")
+                .append(customerSet.getInt("rental_count"))
+                .append(" out of ")
+                .append(customerSet.getString("maximum_rentals"))
+                .append(" available rentals.");
+            System.out.println(sb.toString());
+            System.out.println();
+        }
 	}
 
     /**********************************************************/
