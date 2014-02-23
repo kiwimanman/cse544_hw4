@@ -1,3 +1,4 @@
+import javax.sql.RowSet;
 import javax.sql.rowset.serial.SerialArray;
 import javax.xml.transform.Result;
 import java.sql.*;
@@ -95,6 +96,13 @@ public class Query {
     private static final String PERSONAL_DATA_END_SQL =
             " GROUP BY customer.id, fname, lname, maximum_rentals";
 
+    private static final String VALID_MOVIE_SQL =
+            "SELECT * FROM Movie where movie.id = ?";
+    private  PreparedStatement validMovieStatement;
+
+    private static final String RENT_MOVIE_SQL =
+            "INSERT INTO Rental (customer_id, movie_id) VALUES (";
+
 	public Query(String configFilename) {
 		this.configFilename = configFilename;
 	}
@@ -116,12 +124,12 @@ public class Query {
 		/* open connections to the imdb database */
 		conn = DriverManager.getConnection(jSQLUrl, jSQLUser, jSQLPassword);
 		conn.setAutoCommit(true); //by default automatically commit after each statement
-		//   conn.setTransactionIsolation(...) */
+		conn.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
 
         /* open connections to the customer database */
 		customerConn = DriverManager.getConnection(configProps.getProperty("videostore.customer_url"), jSQLUser, jSQLPassword);
 		customerConn.setAutoCommit(true); //by default automatically commit after each statement
-		//customerConn.setTransactionIsolation(...);
+		customerConn.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
 
 	        
 	}
@@ -141,6 +149,7 @@ public class Query {
         movieSearchStatement = conn.prepareStatement(SEARCH_SQL);
 		directorMidStatement = conn.prepareStatement(DIRECTOR_MID_SQL);
         actorMidStatement = conn.prepareStatement(ACTOR_MID_SQL);
+        validMovieStatement = conn.prepareStatement(VALID_MOVIE_SQL);
 
         rentalStatusStatement = customerConn.prepareStatement(RENTAL_STATUS_STATEMENT);
 		customerLoginStatement = customerConn.prepareStatement(CUSTOMER_LOGIN_SQL);
@@ -185,14 +194,31 @@ public class Query {
 	}
 
 	public boolean isValidMovie(int mid) throws Exception {
-		/* is mid a valid movie ID?  You have to figure it out */
-		return true;
+		validMovieStatement.clearParameters();
+        validMovieStatement.setInt(1, mid);
+        ResultSet validMovieSet = validMovieStatement.executeQuery();
+		boolean result = validMovieSet.next();
+        validMovieSet.close();
+        return result;
 	}
 
-	private int getRenterID(int mid) throws Exception {
-		/* Find the customer id (cid) of whoever currently rents the movie mid; return -1 if none */
-		return (77);
+	private void rentMovie(int mid, int cid) throws Exception {
+		/* Rent the movie to a customer, transaction correctness enforced elsewhere */
+        customerConn.createStatement().executeUpdate(RENT_MOVIE_SQL + Integer.toString(cid) + ',' + Integer.toString(mid) + ')');
 	}
+
+    private boolean isMultipleOpenRentals(int mid) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        sb
+                .append("SELECT count(*) as count FROM Rental ")
+                .append("WHERE status = ").append(RENTAL_OPEN).append(" ")
+                .append("AND movie_id = ").append(Integer.toString(mid));
+
+        ResultSet set = customerConn.createStatement().executeQuery(sb.toString());
+        boolean result = set.next() ? set.getInt("count") > 1 : false;
+        set.close();
+        return result;
+    }
 
     /**********************************************************/
     /* login transaction: invoked only once, when the app is started  */
@@ -298,8 +324,10 @@ public class Query {
 
         if (isValidPlan(pid) && getRemainingRentals(cid) >= 0) {
             commitTransaction();
+            System.out.println("Plan Changed.");
         } else {
             rollbackTransaction();
+            System.out.println("Unable to change plan due to too many outstanding rentals.");
         }
 	}
 
@@ -321,6 +349,25 @@ public class Query {
 	public void transaction_rent(int cid, int mid) throws Exception {
 	    /* rent the movie mid to the customer cid */
 	    /* remember to enforce consistency ! */
+        if (!isValidMovie(mid)) {
+            System.out.println("Invalid movie id. Please try again.");
+            return;
+        }
+
+        beginTransaction();
+        rentMovie(mid, cid);
+
+        // Enforce consistency
+        if (getRemainingRentals(cid) < 0) {
+            System.out.println("Unable to rent you more movies. Please upgrade your plan or return a title.");
+            rollbackTransaction();
+        } else if (isMultipleOpenRentals(mid)) {
+            System.out.println("Someone has already got it checked out. Sorry.");
+            rollbackTransaction();
+        } else {
+            commitTransaction();
+            System.out.println("Enjoy the show!");
+        }
 	}
 
 	public void transaction_return(int cid, int mid) throws Exception {
@@ -344,9 +391,9 @@ public class Query {
 
         // This next part makes me sad but figuring how to get the typing right is annoying in Java.
         // Had to get all the data processing done in one pass of the movies but still have to do another one later...
-        List<Integer> movieIds = new ArrayList<>(movieSet.getFetchSize());
+        List<Integer> movieIds = new ArrayList<>();
         StringBuilder sb = new StringBuilder();
-        Map<Integer, String> outputMap = new HashMap<>(movieSet.getFetchSize());
+        Map<Integer, String> outputMap = new HashMap<>();
         while (movieSet.next()) {
             int movieId = movieSet.getInt(1);
             movieIds.add(movieId);
