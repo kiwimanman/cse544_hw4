@@ -15,6 +15,7 @@ CREATE TABLE Customer (
   );
 
   CREATE TABLE Rental (
+      id            INTEGER IDENTITY(1,1) PRIMARY KEY,
       customer_id   INTEGER NOT NULL REFERENCES Customer,
       movie_id      INTEGER NOT NULL,
       status        BIT NOT NULL DEFAULT(1),
