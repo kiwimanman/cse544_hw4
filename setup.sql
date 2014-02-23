@@ -1,3 +1,7 @@
+-- Keith Stone
+-- CSE 544 Winter 2014
+-- Homework #4
+
 CREATE TABLE RentalPlan (
     id              INTEGER IDENTITY(1,1) PRIMARY KEY,
     name            VARCHAR(MAX) NOT NULL,

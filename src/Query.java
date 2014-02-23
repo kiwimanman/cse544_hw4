@@ -1,6 +1,8 @@
-import javax.sql.RowSet;
-import javax.sql.rowset.serial.SerialArray;
-import javax.xml.transform.Result;
+/**
+ * Keith Stone
+ * CSE 544 Winter 2014
+ * Homework #4
+ */
 import java.sql.*;
 import java.util.*;
 
